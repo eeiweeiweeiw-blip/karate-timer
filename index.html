@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IRIS OUT × からておけいこ タイマー</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#cc3333">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="からておけいこ">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0f;
+      color: #fff;
+      font-family: 'Noto Sans JP', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .bg-glow {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      transition: background 1s ease;
+      background: radial-gradient(ellipse at 50% 50%, rgba(180,20,20,0.12) 0%, transparent 70%);
+    }
+    .bg-glow.active  { background: radial-gradient(ellipse at 50% 50%, rgba(220,60,40,0.28) 0%, transparent 70%); }
+    .bg-glow.rest    { background: radial-gradient(ellipse at 50% 50%, rgba(20,80,200,0.22) 0%, transparent 70%); }
+    .bg-glow.finish  { background: radial-gradient(ellipse at 50% 50%, rgba(255,200,0,0.28) 0%, transparent 70%); }
+
+    /* タイトルバー */
+    .title-bar {
+      position: fixed; top: 0; width: 100%;
+      padding: 10px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(0,0,0,0.65);
+      border-bottom: 1px solid rgba(200,30,30,0.4);
+      z-index: 10; gap: 8px;
+    }
+    .title-bar .song { font-size: 13px; color: #cc3333; font-weight: 700; letter-spacing: 1px; }
+    .title-bar .subtitle { font-size: 10px; color: #555; margin-top: 2px; }
+    .title-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .set-selector { display: flex; gap: 6px; }
+    .set-btn {
+      padding: 5px 12px; border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: transparent; color: #666;
+      font-size: 12px; cursor: pointer; font-family: inherit;
+      transition: all 0.2s;
+    }
+    .set-btn.active { background: rgba(200,30,30,0.25); border-color: #cc3333; color: #ff6666; }
+    .qr-btn {
+      padding: 5px 10px; border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.07); color: #aaa;
+      font-size: 16px; cursor: pointer; line-height: 1;
+      transition: all 0.2s;
+    }
+    .qr-btn:hover { background: rgba(255,255,255,0.13); }
+
+    /* QRモーダル */
+    .qr-modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.88);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 200; gap: 20px;
+    }
+    .qr-modal.hidden { display: none; }
+    .qr-box {
+      background: #fff; border-radius: 16px; padding: 20px;
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+    }
+    .qr-box img { width: 200px; height: 200px; display: block; }
+    .qr-url {
+      font-size: 18px; font-weight: 700; color: #111;
+      letter-spacing: 1px; text-align: center;
+    }
+    .qr-hint { font-size: 12px; color: #666; text-align: center; line-height: 1.6; }
+    .qr-close {
+      padding: 12px 40px; border-radius: 50px;
+      background: #cc3333; color: #fff;
+      border: none; font-size: 16px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+    }
+
+    /* メインエリア */
+    .main {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 16px;
+      padding: 70px 20px 100px;
+      width: 100%; max-width: 480px;
+    }
+
+    /* セット表示 */
+    .set-info { font-size: 13px; color: #888; letter-spacing: 1px; }
+    .set-info span { color: #cc3333; font-weight: 700; }
+
+    /* 曲全体プログレス */
+    .song-progress-wrap { width: 100%; }
+    .song-progress-label { display: flex; justify-content: space-between; font-size: 11px; color: #555; margin-bottom: 5px; }
+    .song-progress-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+    .song-progress-fill { height: 100%; background: linear-gradient(90deg, #cc3333, #ff6644); border-radius: 2px; width: 0%; transition: width 0.3s linear; }
+
+    /* サークルタイマー */
+    .circle-wrap { position: relative; width: 180px; height: 180px; }
+    .circle-svg { transform: rotate(-90deg); width: 180px; height: 180px; }
+    .circle-track { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 10; }
+    .circle-progress {
+      fill: none; stroke: #cc3333; stroke-width: 10; stroke-linecap: round;
+      stroke-dasharray: 503; stroke-dashoffset: 0;
+      transition: stroke-dashoffset 0.3s linear, stroke 0.5s ease;
+    }
+    .circle-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .time-display { font-size: 58px; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 0 30px rgba(200,50,50,0.8); font-variant-numeric: tabular-nums; }
+    .time-label { font-size: 10px; color: #555; margin-top: 3px; letter-spacing: 2px; }
+
+    /* エクササイズカード */
+    .exercise-card {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(200,30,30,0.3);
+      border-radius: 18px;
+      padding: 18px 20px 16px;
+      display: flex; align-items: center; gap: 18px;
+      transition: all 0.5s ease;
+    }
+    .pose-illustration { flex-shrink: 0; width: 90px; height: 90px; display: flex; align-items: center; justify-content: center; }
+    .pose-illustration svg { max-width: 90px; max-height: 90px; }
+    .exercise-text { flex: 1; }
+    .exercise-part { font-size: 10px; color: #cc3333; letter-spacing: 3px; margin-bottom: 4px; }
+    .exercise-name { font-size: 24px; font-weight: 900; letter-spacing: 1px; line-height: 1.2; }
+    .exercise-tip { margin-top: 6px; font-size: 12px; color: #888; line-height: 1.6; }
+
+    /* 次の種目 */
+    .next-exercise {
+      width: 100%;
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .next-label { font-size: 10px; color: #555; letter-spacing: 2px; white-space: nowrap; }
+    .next-mini-svg { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .next-mini-svg svg { max-width: 32px; max-height: 32px; }
+    .next-name { font-size: 14px; font-weight: 700; color: #aaa; }
+
+    /* コントロール */
+    .controls {
+      position: fixed; bottom: 0; width: 100%;
+      padding: 14px 28px;
+      display: flex; gap: 12px; justify-content: center;
+      background: rgba(0,0,0,0.78);
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .btn { padding: 14px 36px; border: none; border-radius: 50px; font-size: 18px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all 0.2s ease; }
+    .btn-main { background: linear-gradient(135deg, #cc2222, #ff4444); color: #fff; flex: 1; max-width: 260px; box-shadow: 0 4px 24px rgba(200,30,30,0.4); }
+    .btn-main:hover { transform: translateY(-2px); }
+    .btn-main:active { transform: translateY(0); }
+    .btn-reset { background: rgba(255,255,255,0.08); color: #888; padding: 14px 18px; }
+    .btn-reset:hover { background: rgba(255,255,255,0.13); color: #ccc; }
+
+    /* 完了画面 */
+    .finish-screen { display: none; flex-direction: column; align-items: center; gap: 16px; text-align: center; padding: 80px 24px 110px; }
+    .finish-screen.show { display: flex; }
+    .finish-icon { font-size: 80px; animation: pop 0.5s ease; }
+    @keyframes pop { 0%{transform:scale(0)} 80%{transform:scale(1.2)} 100%{transform:scale(1)} }
+    .finish-title { font-size: 30px; font-weight: 900; color: #FFD700; }
+    .finish-sub { font-size: 16px; color: #888; line-height: 2; }
+
+    /* フラッシュ */
+    .flash { position: fixed; inset: 0; background: rgba(255,255,255,0.2); pointer-events: none; opacity: 0; z-index: 999; }
+    .flash.go { animation: flashgo 0.35s ease; }
+    @keyframes flashgo { 0%{opacity:1} 100%{opacity:0} }
+
+    /* カウントダウン */
+    .countdown-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 100; gap: 20px;
+    }
+    .countdown-overlay.hidden { display: none; }
+    .countdown-text { font-size: 20px; color: #888; letter-spacing: 2px; }
+    .countdown-num { font-size: 120px; font-weight: 900; color: #cc3333; text-shadow: 0 0 60px rgba(200,30,30,0.9); animation: countPop 1s ease; }
+    @keyframes countPop { 0%{transform:scale(1.5);opacity:0} 30%{transform:scale(1);opacity:1} 80%{transform:scale(1);opacity:1} 100%{transform:scale(0.8);opacity:0} }
+
+    /* スマホ最適化 */
+    @media (max-width: 480px) {
+      .title-bar .song { font-size: 11px; }
+      .title-bar .subtitle { display: none; }
+      .main { gap: 12px; padding: 65px 14px 95px; }
+      .circle-wrap { width: 150px; height: 150px; }
+      .circle-svg { width: 150px; height: 150px; }
+      .circle-progress, .circle-track { r: 65; cx: 75; cy: 75; stroke-dasharray: 408; }
+      .time-display { font-size: 48px; }
+      .exercise-card { padding: 14px 14px 12px; gap: 12px; }
+      .pose-illustration { width: 70px; height: 70px; }
+      .pose-illustration svg { max-width: 70px; max-height: 70px; }
+      .exercise-name { font-size: 20px; }
+      .exercise-tip { font-size: 11px; }
+      .next-exercise { padding: 8px 12px; }
+      .next-mini-svg { width: 26px; height: 26px; }
+      .next-name { font-size: 13px; }
+      .btn { font-size: 16px; padding: 13px 28px; }
+      .controls { padding: 12px 20px; }
+      .set-btn { padding: 4px 10px; font-size: 11px; }
+      .qr-btn { font-size: 14px; padding: 4px 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- YouTube hidden player -->
+<div id="yt-container" style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;"></div>
+
+<div class="bg-glow" id="bgGlow"></div>
+<div class="flash" id="flash"></div>
+
+<!-- カウントダウン -->
+<div class="countdown-overlay hidden" id="countdownOverlay">
+  <div class="countdown-text">🎵 マットをひいてじゅんびしよう！</div>
+  <div class="countdown-num" id="countdownNum">3</div>
+</div>
+
+<!-- QRモーダル -->
+<div class="qr-modal hidden" id="qrModal">
+  <div class="qr-box">
+    <div class="qr-url" id="qrUrlText"></div>
+    <div id="qrImg"></div>
+    <div class="qr-hint" id="qrHint"></div>
+  </div>
+  <button class="qr-close" onclick="document.getElementById('qrModal').classList.add('hidden')">とじる</button>
+</div>
+
+<!-- タイトルバー -->
+<div class="title-bar">
+  <div>
+    <div class="song">🎵 IRIS OUT — よねずけんし</div>
+    <div class="subtitle">げきじょうばん チェンソーマン レゼへん しゅだいか</div>
+  </div>
+  <div class="title-right">
+    <button class="qr-btn" id="musicBtn" onclick="manualPlayMusic()" title="音楽を再生">🎵</button>
+  <button class="qr-btn" onclick="shareApp()" title="ともだちにおしえる">📱</button>
+  </div>
+</div>
+
+<!-- メイン -->
+<div class="main" id="mainArea">
+<div class="song-progress-wrap">
+    <div class="song-progress-label">
+      <span>0:00</span><span id="songElapsed">0:00</span><span>2:32</span>
+    </div>
+    <div class="song-progress-bar">
+      <div class="song-progress-fill" id="songProgressFill"></div>
+    </div>
+  </div>
+
+  <div class="circle-wrap">
+    <svg class="circle-svg" viewBox="0 0 180 180">
+      <circle class="circle-track" cx="90" cy="90" r="80"/>
+      <circle class="circle-progress" id="circleProgress" cx="90" cy="90" r="80"/>
+    </svg>
+    <div class="circle-inner">
+      <div class="time-display" id="timeDisplay">45</div>
+      <div class="time-label">SECONDS</div>
+    </div>
+  </div>
+
+  <div class="exercise-card">
+    <div class="pose-illustration" id="poseIllustration"></div>
+    <div class="exercise-text">
+      <div class="exercise-part" id="exercisePart">あめろ</div>
+      <div class="exercise-name" id="exerciseName">しこだちキープ</div>
+      <div class="exercise-tip" id="exerciseTip">ひざをつまさきのほうこうに！じっとしてて！</div>
+    </div>
+  </div>
+
+  <div class="next-exercise" id="nextExercise">
+    <span class="next-label">NEXT</span>
+    <div class="next-mini-svg" id="nextMiniSvg"></div>
+    <span class="next-name" id="nextName">ひじプランク</span>
+  </div>
+</div>
+
+<!-- 完了画面 -->
+<div class="finish-screen" id="finishScreen">
+  <div class="finish-icon">🥋</div>
+  <div class="finish-title">よくがんばった！</div>
+  <div class="finish-sub">しこだち、ものすごく<br>つよくなってるぞ！💪</div>
+</div>
+
+<!-- コントロール -->
+<div class="controls">
+  <button class="btn btn-reset" onclick="resetTimer()">↺</button>
+  <button class="btn btn-main" id="mainBtn" onclick="toggleTimer()">▶ すたーと</button>
+</div>
+
+<script>
+// ===== 音声（Web Audio API）=====
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// iOS対応：無音バッファを再生して音声をアンロック
+function unlockAudio() {
+  try {
+    const ctx = getAudioCtx();
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    ctx.resume();
+  } catch(e) {}
+}
+
+function playBeep(freq, dur, vol = 0.45, type = 'sine') {
+  try {
+    const ctx = getAudioCtx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + dur);
+  } catch(e) {}
+}
+
+// ピッ（3秒前カウントダウン）
+function beepWarning() { playBeep(880, 0.15, 0.9); }
+
+// ピーン（種目チェンジ）
+function beepChange() {
+  playBeep(1047, 0.1, 1.0);
+  setTimeout(() => playBeep(1319, 0.3, 1.0), 90);
+}
+
+// ===== YouTube IFrame API =====
+var ytPlayer = null;
+var ytReady = false;
+
+(function loadYTAPI() {
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+})();
+
+window.onYouTubeIframeAPIReady = function() {
+  ytPlayer = new YT.Player('yt-container', {
+    videoId: 'LmZD-TU96q4',
+    height: '1', width: '1',
+    playerVars: { autoplay: 0, controls: 0, rel: 0, playsinline: 1 },
+    events: {
+      onReady: function() { ytReady = true; }
+    }
+  });
+};
+
+// ===== ポーズSVG =====
+const svgs = {
+
+  shikodachi: `<svg viewBox="0 0 100 125" width="90" height="112" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="12" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="22" x2="50" y2="58" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="34" x2="28" y2="46" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="34" x2="72" y2="46" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="58" x2="15" y2="80" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="58" x2="85" y2="80" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="15" y1="80" x2="10" y2="112" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="85" y1="80" x2="90" y2="112" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="2"  y1="112" x2="22" y2="112" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="78" y1="112" x2="98" y2="112" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="15" cy="80" r="4" fill="white"/>
+    <circle cx="85" cy="80" r="4" fill="white"/>
+  </svg>`,
+
+  plank: `<svg viewBox="0 0 160 80" width="140" height="70" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="140" cy="24" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="130" y1="24" x2="20" y2="30" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="20"  y1="30" x2="5"  y2="30" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="100" y1="27" x2="88" y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="72"  y1="55" x2="104" y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="55"  y1="29" x2="42" y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="25"  y1="55" x2="58" y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="20"  y1="30" x2="8"  y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="2"   y1="55" x2="18" y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <text x="78" y="72" text-anchor="middle" fill="#cc3333" font-size="11" font-weight="bold">→ からだをまっすぐ！</text>
+  </svg>`,
+
+  kicksquat: `<svg viewBox="0 0 130 125" width="105" height="101" xmlns="http://www.w3.org/2000/svg">
+    <!-- head -->
+    <circle cx="45" cy="12" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- body -->
+    <line x1="45" y1="22" x2="45" y2="62" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- left arm (down) -->
+    <line x1="45" y1="35" x2="22" y2="52" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- right arm (up for balance) -->
+    <line x1="45" y1="35" x2="72" y2="26" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- standing left leg (bent) -->
+    <line x1="45" y1="62" x2="34" y2="90" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="34" y1="90" x2="32" y2="112" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="22" y1="112" x2="44" y2="112" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="34" cy="90" r="4" fill="white"/>
+    <!-- kicking right leg (extended to upper right) -->
+    <line x1="45" y1="62" x2="78" y2="72" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="78" y1="72" x2="112" y2="58" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="78" cy="72" r="4" fill="white"/>
+    <!-- kick tip lines -->
+    <line x1="108" y1="52" x2="118" y2="62" stroke="#ff6644" stroke-width="3" stroke-linecap="round"/>
+    <line x1="118" y1="52" x2="118" y2="65" stroke="#ff6644" stroke-width="3" stroke-linecap="round"/>
+    <text x="62" y="122" text-anchor="middle" fill="#ff6644" font-size="11" font-weight="bold">けってあがる！</text>
+  </svg>`,
+
+  abs: `<svg viewBox="0 0 160 100" width="140" height="88" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="136" cy="22" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="126" y1="28" x2="80" y2="52" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="126" y1="28" x2="145" y2="44" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="80"  y1="52" x2="30" y2="65" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="80"  y1="52" x2="104" y2="70" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="30"  y1="65" x2="18" y2="88" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="30"  y1="65" x2="50" y2="88" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="10"  y1="88" x2="30" y2="88" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="40"  y1="88" x2="62" y2="88" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="104" y1="70" x2="100" y2="88" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="90"  y1="88" x2="114" y2="88" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+  </svg>`,
+
+  back: `<svg viewBox="0 0 160 90" width="140" height="79" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="18" cy="18" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="28"  y1="20" x2="145" y2="50" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="14"  y1="12" x2="5"   y2="30" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="28"  y1="20" x2="22"  y2="38" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="145" y1="50" x2="148" y2="68" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="138" y1="68" x2="158" y2="68" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="110" y1="42" x2="112" y2="68" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="102" y1="68" x2="122" y2="68" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="5"   y1="78" x2="158" y2="78" stroke="rgba(255,255,255,0.25)" stroke-width="2" stroke-dasharray="6,4"/>
+    <text x="80" y="90" text-anchor="middle" fill="#cc3333" font-size="11" font-weight="bold">うつぶせでうえをむく！</text>
+  </svg>`,
+
+  spinjump: `<svg viewBox="0 0 120 132" width="100" height="110" xmlns="http://www.w3.org/2000/svg">
+    <!-- shadow (in the air) -->
+    <ellipse cx="60" cy="116" rx="22" ry="5" fill="rgba(255,255,255,0.1)"/>
+    <!-- rotation arrow -->
+    <path d="M 16,88 A 44,28 0 0 1 104,88" stroke="#ff6644" fill="none" stroke-width="2.5" stroke-dasharray="5,3" stroke-linecap="round"/>
+    <line x1="100" y1="82" x2="106" y2="90" stroke="#ff6644" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="100" y1="90" x2="106" y2="90" stroke="#ff6644" stroke-width="2.5" stroke-linecap="round"/>
+    <!-- head -->
+    <circle cx="60" cy="14" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- body -->
+    <line x1="60" y1="24" x2="60" y2="56" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- arms spread for spin -->
+    <line x1="60" y1="36" x2="25" y2="28" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="60" y1="36" x2="95" y2="44" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- legs bent (mid-jump) -->
+    <line x1="60" y1="56" x2="40" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="40" y1="75" x2="45" y2="94" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="60" y1="56" x2="80" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="80" y1="75" x2="75" y2="94" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="40" cy="75" r="4" fill="white"/>
+    <circle cx="80" cy="75" r="4" fill="white"/>
+    <text x="60" y="128" text-anchor="middle" fill="#ff6644" font-size="10" font-weight="bold">はんかいてんジャンプ！</text>
+  </svg>`,
+
+  prep: `<svg viewBox="0 0 100 118" width="85" height="100" xmlns="http://www.w3.org/2000/svg">
+    <!-- mat (rolling) -->
+    <rect x="8" y="100" width="84" height="10" rx="4" fill="rgba(80,180,80,0.35)" stroke="rgba(80,200,80,0.7)" stroke-width="2"/>
+    <circle cx="8" cy="105" r="5" fill="none" stroke="rgba(80,200,80,0.7)" stroke-width="2"/>
+    <!-- person standing -->
+    <circle cx="50" cy="14" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="24" x2="50" y2="66" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="36" x2="28" y2="54" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="36" x2="72" y2="54" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="66" x2="40" y2="92" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="66" x2="60" y2="92" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="30" y1="92" x2="50" y2="92" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="50" y1="92" x2="70" y2="92" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <text x="50" y="116" text-anchor="middle" fill="#88aaff" font-size="11" font-weight="bold">マットをひく！</text>
+  </svg>`,
+
+  pushup: `<svg viewBox="0 0 160 90" width="140" height="79" xmlns="http://www.w3.org/2000/svg">
+    <!-- ground line -->
+    <line x1="5" y1="75" x2="155" y2="75" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+    <!-- head (left side, face down) -->
+    <circle cx="15" cy="48" r="9" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- body horizontal -->
+    <line x1="15" y1="57" x2="120" y2="57" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- left arm (bent, hand on floor) -->
+    <line x1="35" y1="57" x2="38" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- right arm (bent, hand on floor) -->
+    <line x1="80" y1="57" x2="83" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- legs straight, feet on floor -->
+    <line x1="120" y1="57" x2="135" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="120" y1="57" x2="148" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- down arrow -->
+    <line x1="60" y1="38" x2="60" y2="52" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="54" y1="46" x2="60" y2="54" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="66" y1="46" x2="60" y2="54" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="80" y="88" text-anchor="middle" fill="#FFD700" font-size="11" font-weight="bold">うでたてふせ！</text>
+  </svg>`,
+
+  bridge: `<svg viewBox="0 0 160 90" width="140" height="79" xmlns="http://www.w3.org/2000/svg">
+    <!-- floor -->
+    <line x1="5" y1="75" x2="155" y2="75" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+    <!-- head (on ground, left) -->
+    <circle cx="18" cy="65" r="10" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- shoulders/back arched up -->
+    <line x1="18" y1="55" x2="30" y2="38" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="30" y1="38" x2="80" y2="22" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="80" y1="22" x2="115" y2="38" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- hips down to thighs -->
+    <line x1="115" y1="38" x2="120" y2="55" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- lower legs (knees bent, feet on floor) -->
+    <line x1="120" y1="55" x2="108" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="120" cy="55" r="4" fill="white"/>
+    <!-- arms on floor -->
+    <line x1="28" y1="56" x2="55" y2="70" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="55" y1="70" x2="75" y2="75" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- up arrow -->
+    <line x1="80" y1="35" x2="80" y2="12" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="74" y1="18" x2="80" y2="10" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="86" y1="18" x2="80" y2="10" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="80" y="88" text-anchor="middle" fill="#FFD700" font-size="11" font-weight="bold">おしりをあげる！</text>
+  </svg>`,
+};
+
+// ===== 種目データ (合計152秒) =====
+// 0-8    じゅんび
+// 8-38   プランク  30秒
+// 38-63  くるりんジャンプ  25秒
+// 63-90  スクワットキック  27秒
+// 90-115 ふっきん  25秒 ← 90秒スタート！
+// 115-152 はいきん  37秒
+const exercises = [
+  {
+    part: 'じゅんび', name: 'うでたてふせ！',
+    tip: 'からだをまっすぐに！\nうでをまげてのばす！',
+    duration: 18, color: '#5566cc', svg: svgs.pushup
+  },
+  {
+    part: 'あめろ', name: 'ひじプランク',
+    tip: 'おなかをかたくして！\nおしりをあげないよ！',
+    duration: 28, color: '#cc3333', svg: svgs.plank
+  },
+  {
+    part: '🔥さび', name: 'くるりんジャンプ',
+    tip: 'しこだちからジャンプして\nはんかいてん！8かい！',
+    duration: 15, color: '#dd4400', svg: svgs.spinjump
+  },
+  {
+    part: 'へんか', name: 'スクワットキック',
+    tip: 'しゃがんでたって\nキック！15かい！',
+    duration: 13, color: '#dd4400', svg: svgs.kicksquat
+  },
+  {
+    part: '🔥さび2', name: 'はいきん',
+    tip: 'うつぶせで、\nゆっくりうえをむく！',
+    duration: 29, color: '#dd4400', svg: svgs.back
+  },
+  {
+    part: 'へんか2', name: 'ふっきん',
+    tip: 'ひざをまげて、\nゆっくりおきあがる！',
+    duration: 29, color: '#5566cc', svg: svgs.abs
+  },
+  {
+    part: 'さいご', name: 'ブリッジ',
+    tip: 'あおむけでひざをまげて\nおしりをうえにあげる！',
+    duration: 14, color: '#FFD700', svg: svgs.bridge
+  },
+];
+// 合計: 18+30+13+13+29+27+22 = 152秒 ✓
+
+const TOTAL_SONG = 152;
+const CIRCUMFERENCE = 503; // 2*π*80
+
+let currentIndex = 0;
+let remaining = exercises[0].duration;
+let running = false;
+let interval = null;
+let elapsed = 0;
+let currentSet = 1;
+let totalSets = 1;
+let isFinished = false;
+
+function updateUI() {
+  const ex = exercises[currentIndex];
+  const next = exercises[currentIndex + 1];
+
+  document.getElementById('exercisePart').textContent = ex.part;
+  document.getElementById('exerciseName').textContent = ex.name;
+  document.getElementById('exerciseTip').innerHTML = ex.tip.replace('\n', '<br>');
+  document.getElementById('timeDisplay').textContent = remaining;
+  document.getElementById('poseIllustration').innerHTML = ex.svg;
+
+  const offset = CIRCUMFERENCE * (1 - remaining / ex.duration);
+  document.getElementById('circleProgress').style.strokeDashoffset = offset;
+  document.getElementById('circleProgress').style.stroke = ex.color;
+
+  if (next) {
+    document.getElementById('nextMiniSvg').innerHTML = next.svg;
+    document.getElementById('nextName').textContent = next.name;
+    document.getElementById('nextExercise').style.opacity = '1';
+  } else {
+    document.getElementById('nextExercise').style.opacity = '0';
+  }
+
+  const pct = Math.min((elapsed / TOTAL_SONG) * 100, 100);
+  document.getElementById('songProgressFill').style.width = pct + '%';
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  document.getElementById('songElapsed').textContent = `${m}:${String(s).padStart(2,'0')}`;
+
+  document.getElementById('currentSet').textContent = currentSet;
+  document.getElementById('totalSetsDisplay').textContent = totalSets;
+
+  const bg = document.getElementById('bgGlow');
+  if (ex.color === '#FFD700') bg.className = 'bg-glow finish';
+  else if (ex.color === '#5566cc') bg.className = 'bg-glow rest';
+  else bg.className = 'bg-glow active';
+}
+
+function tick() {
+  if (remaining > 1) {
+    remaining--;
+    elapsed++;
+    // 3・2・1秒前にピッと鳴らす
+    if (remaining <= 3) beepWarning();
+    updateUI();
+  } else {
+    beepChange(); // 種目チェンジ音
+    triggerFlash();
+    if (currentIndex < exercises.length - 1) {
+      currentIndex++;
+      remaining = exercises[currentIndex].duration;
+      elapsed++;
+      updateUI();
+    } else {
+      if (currentSet < totalSets) {
+        currentSet++;
+        currentIndex = 0;
+        remaining = exercises[0].duration;
+        elapsed = 0;
+        updateUI();
+      } else {
+        clearInterval(interval);
+        running = false;
+        showFinish();
+      }
+    }
+  }
+}
+
+function triggerFlash() {
+  const flash = document.getElementById('flash');
+  flash.className = 'flash go';
+  setTimeout(() => flash.className = 'flash', 350);
+}
+
+function toggleTimer() {
+  unlockAudio(); // iOS音声アンロック（ユーザー操作のタイミングで必須）
+  if (isFinished) { resetTimer(); return; }
+  if (!running) {
+    // iOS対応：ユーザー操作の瞬間にミュートで再生開始
+    if (ytPlayer && ytReady) {
+      try {
+        ytPlayer.mute();
+        ytPlayer.seekTo(0);
+        ytPlayer.playVideo();
+      } catch(e) {}
+    }
+    if (elapsed === 0 && currentIndex === 0) {
+      startCountdown();
+    } else {
+      resumeTimer();
+    }
+  } else {
+    clearInterval(interval);
+    running = false;
+    if (ytPlayer && ytReady) ytPlayer.pauseVideo();
+    document.getElementById('mainBtn').textContent = '▶ つづける';
+  }
+}
+
+function resumeTimer() {
+  running = true;
+  document.getElementById('mainBtn').textContent = '⏸ とめる';
+  if (ytPlayer && ytReady) ytPlayer.playVideo();
+  interval = setInterval(tick, 1000);
+}
+
+function startCountdown() {
+  const overlay = document.getElementById('countdownOverlay');
+  const numEl = document.getElementById('countdownNum');
+  overlay.classList.remove('hidden');
+  let count = 3;
+  numEl.textContent = count;
+  beepWarning(); // 最初の3でピッ
+
+  const cd = setInterval(() => {
+    count--;
+    if (count > 0) {
+      numEl.style.animation = 'none';
+      void numEl.offsetHeight;
+      numEl.style.animation = 'countPop 1s ease';
+      numEl.textContent = count;
+      beepWarning(); // 2・1でピッ
+    } else {
+      clearInterval(cd);
+      numEl.style.animation = 'none';
+      void numEl.offsetHeight;
+      numEl.style.animation = 'countPop 0.5s ease';
+      numEl.textContent = 'GO!';
+      beepChange(); // GO!でピーン
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+        startTimer();
+      }, 600);
+    }
+  }, 1000);
+}
+
+function startTimer() {
+  running = true;
+  document.getElementById('mainBtn').textContent = '⏸ とめる';
+  if (ytPlayer && ytReady) {
+    ytPlayer.seekTo(0);
+    ytPlayer.unMute();
+    ytPlayer.setVolume(100);
+    // playVideo()はすでに呼ばれているのでミュート解除のみ
+  }
+  interval = setInterval(tick, 1000);
+}
+
+function resetTimer() {
+  clearInterval(interval);
+  running = false; isFinished = false;
+  if (ytPlayer && ytReady) { ytPlayer.seekTo(0); ytPlayer.pauseVideo(); }
+  currentIndex = 0; remaining = exercises[0].duration;
+  elapsed = 0; currentSet = 1;
+  document.getElementById('mainBtn').textContent = '▶ すたーと';
+  document.getElementById('mainArea').style.display = 'flex';
+  document.getElementById('finishScreen').classList.remove('show');
+  document.getElementById('bgGlow').className = 'bg-glow';
+  document.getElementById('countdownOverlay').classList.add('hidden');
+  updateUI();
+}
+
+function showFinish() {
+  isFinished = true;
+  document.getElementById('mainArea').style.display = 'none';
+  document.getElementById('finishScreen').classList.add('show');
+  document.getElementById('bgGlow').className = 'bg-glow finish';
+  document.getElementById('mainBtn').textContent = '↺ もういちど';
+}
+
+function setTotalSets(n) {
+  totalSets = n;
+  document.querySelectorAll('.set-btn').forEach((b, i) => {
+    b.classList.toggle('active', (i === 0 && n === 2) || (i === 1 && n === 3));
+  });
+  document.getElementById('totalSetsDisplay').textContent = n;
+}
+
+updateUI();
+
+// 音楽手動再生
+function manualPlayMusic() {
+  unlockAudio();
+  if (ytPlayer && ytReady) {
+    try {
+      const t = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+      ytPlayer.unMute();
+      ytPlayer.setVolume(100);
+      ytPlayer.playVideo();
+      document.getElementById('musicBtn').textContent = '🔊';
+      setTimeout(() => document.getElementById('musicBtn').textContent = '🎵', 2000);
+    } catch(e) {}
+  }
+}
+
+// シェア機能
+function shareApp() {
+  const url = 'https://gregarious-rugelach-ce0b4c.netlify.app';
+  if (navigator.share) {
+    navigator.share({
+      title: 'IRIS OUT × からておけいこ タイマー',
+      text: '空手の筋トレタイマーアプリ！IRIS OUTに合わせて一緒にやろう！',
+      url: url
+    });
+  } else {
+    document.getElementById('qrModal').classList.remove('hidden');
+  }
+}
+
+// Service Worker 登録
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
