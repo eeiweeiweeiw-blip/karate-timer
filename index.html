@@ -141,8 +141,8 @@
     .pose-illustration svg { max-width: 90px; max-height: 90px; }
     .exercise-text { flex: 1; }
     .exercise-part { font-size: 10px; color: #cc3333; letter-spacing: 3px; margin-bottom: 4px; }
-    .exercise-name { font-size: 24px; font-weight: 900; letter-spacing: 1px; line-height: 1.2; }
-    .exercise-tip { margin-top: 6px; font-size: 12px; color: #888; line-height: 1.6; }
+    .exercise-name { font-size: 34px; font-weight: 900; letter-spacing: 1px; line-height: 1.2; }
+    .exercise-tip { margin-top: 6px; font-size: 15px; color: #aaa; line-height: 1.6; }
 
     /* 次の種目 */
     .next-exercise {
@@ -153,10 +153,10 @@
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.06);
     }
-    .next-label { font-size: 10px; color: #555; letter-spacing: 2px; white-space: nowrap; }
+    .next-label { font-size: 14px; color: #777; letter-spacing: 2px; white-space: nowrap; }
     .next-mini-svg { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .next-mini-svg svg { max-width: 32px; max-height: 32px; }
-    .next-name { font-size: 14px; font-weight: 700; color: #aaa; }
+    .next-name { font-size: 20px; font-weight: 700; color: #ddd; }
 
     /* コントロール */
     .controls {
@@ -348,7 +348,19 @@ function playBeep(freq, dur, vol = 0.45, type = 'sine') {
 }
 
 // ピッ（3秒前カウントダウン）
-function beepWarning() { playBeep(880, 0.15, 0.9); }
+function beepWarning() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.6, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.18);
+  } catch(e) {}
+}
 
 // ピーン（種目チェンジ）
 function beepChange() {
@@ -645,7 +657,7 @@ function tick() {
     remaining--;
     elapsed++;
     // 3・2・1秒前にピッと鳴らす
-    if (remaining <= 3) beepWarning();
+    if (remaining <= 5) beepWarning();
     updateUI();
   } else {
     beepChange(); // 種目チェンジ音
