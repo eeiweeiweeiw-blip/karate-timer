@@ -1,4 +1,4 @@
-const CACHE = 'karate-timer-v4';
+const CACHE = 'karate-timer-v5';
 const FILES = [
   '/',
   '/index.html',
